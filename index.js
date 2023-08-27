@@ -1,113 +1,100 @@
+const path = require('path')
 const express = require('express')
-const http = require('http')
-const socket = require('socket.io')
-const { version, validate } = require('uuid')
-
 const app = express()
-const server = http.createServer(app)
-const io = socket(server)
+const server = require('http').createServer(app)
+const io = require('socket.io')(server)
+const { version, validate } = require('uuid')
 
 const PORT = process.env.PORT || 5001
 
-const validateRoomID = (roomID) => validate(roomID) && version(roomID) === 4
-
-const getRooms = () => {
-  // get rooms list
+function getClientRooms() {
   const { rooms } = io.sockets.adapter
 
-  // get uuid created rooms only cause we do not need auto-created rooms while they're present by default
-  const filteredRooms = Array.from(rooms.keys()).filter((roomID) => validateRoomID(roomID))
-  return filteredRooms
+  return Array.from(rooms.keys()).filter((roomID) => validate(roomID) && version(roomID) === 4)
 }
 
-const shareRooms = () => {
-  // emit rooms list to socket-connected peers
+function shareRoomsInfo() {
   io.emit('SHARE_ROOMS', {
-    rooms: getRooms()
+    rooms: getClientRooms()
   })
 }
 
 io.on('connection', (socket) => {
-  shareRooms()
-  console.log('Socket connected')
+  shareRoomsInfo()
+
+  socket.on('JOIN_ROOM', (config) => {
+    const { roomID } = config
+    const { rooms } = socket
+
+    if (Array.from(rooms).includes(roomID)) {
+      return console.warn(`Already joined to ${roomID}`)
+    }
+
+    const clients = Array.from(io.sockets.adapter.rooms.get(roomID) || [])
+
+    clients.forEach((clientID) => {
+      io.to(clientID).emit('ADD_PEER', {
+        peerID: socket.id,
+        shouldCreateOffer: false
+      })
+
+      socket.emit('ADD_PEER', {
+        peerID: clientID,
+        shouldCreateOffer: true
+      })
+    })
+
+    socket.join(roomID)
+    shareRoomsInfo()
+  })
 
   const leaveRoom = () => {
     const { rooms } = socket
-    Array.from(rooms).forEach((roomID) => {
-      // get all peers connected to this room or empty array if noone
-      const clients = Array.from(io.sockets.adapter.rooms.get(roomID) || [])
 
-      clients.forEach((client) => {
-        // tell every peer in room to disconnect from leaving peer
-        io.to(client).emit('REMOVE_PEER', {
-          peerID: socket.id
+    Array.from(rooms)
+      .filter((roomID) => validate(roomID) && version(roomID) === 4)
+      .forEach((roomID) => {
+        const clients = Array.from(io.sockets.adapter.rooms.get(roomID) || [])
+
+        clients.forEach((clientID) => {
+          io.to(clientID).emit('REMOVE_PEER', { peerID: socket.id })
+          socket.emit('REMOVE_PEER', { peerID: clientID })
         })
 
-        // tell leaving peer every client's id to disconnect from
-        socket.emit('REMOVE_PEER', {
-          peerID: client
-        })
+        socket.leave(roomID)
       })
 
-      console.log(`peer ${socket.id} leaving room ${roomID}`)
-      socket.leave(roomID)
-      shareRooms()
-    })
+    shareRoomsInfo()
   }
 
-  const joinRoom = (data) => {
-    {
-      const { roomID } = data
-      const { rooms } = socket
-
-      if (Array.from(rooms).includes(roomID)) {
-        return console.error('already connected to room')
-      }
-
-      // get all peers connected to this room or empty array if noone
-      const clients = Array.from(io.sockets.adapter.rooms.get(roomID) | [])
-
-      clients.forEach((clientID) => {
-        // tell every peer in room to add new joining peer, no offer created
-        io.to(clientID).emit('ADD_PEER', {
-          peerID: socket.id,
-          shouldCreateOffer: false
-        })
-
-        // tell joining peer to add every other client id and create an offer
-        socket.emit('ADD_PEER', {
-          peerID: clientID,
-          shouldCreateOffer: true
-        })
-      })
-
-      console.log(`peer ${socket.id} joined room ${roomID}`)
-      socket.join(roomID)
-      shareRooms()
-    }
-  }
-
-  const sessionDescription = ({ peerID, sessionDescription }) => {
-    // send from current peer
-    io.to(peerID).emit('SESSION_DESCIPTION', {
+  const sendSessionDescription = ({ peerID, sessionDescription }) => {
+    io.to(peerID).emit('SESSION_DESCRIPTION', {
       peerID: socket.id,
       sessionDescription
     })
   }
 
-  const iceCandidate = ({ peerID, iceCandidate }) => {
-    // send from current peer
+  const sendIceCandidate = ({ peerID, iceCandidate }) => {
     io.to(peerID).emit('ICE_CANDIDATE', {
       peerID: socket.id,
       iceCandidate
     })
   }
 
-  socket.on('JOIN_ROOM', joinRoom)
-  socket.on('LEAVE_ROOM', (socket) => leaveRoom(socket))
-  socket.on('disconnecting', (socket) => leaveRoom(socket))
-  socket.on('RELAY_LOCALDESC', sessionDescription)
-  socket.on('RELAY_ICECANDIDATE', iceCandidate)
+  socket.on('LEAVE_ROOM', leaveRoom)
+  socket.on('disconnecting', leaveRoom)
+  socket.on('RELAY_SDP', sendSessionDescription)
+  socket.on('RELAY_ICE', sendIceCandidate)
 })
 
-server.listen(PORT, () => console.log(`Server is running at ${PORT}`))
+const publicPath = path.join(__dirname, 'build')
+
+app.use(express.static(publicPath))
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(publicPath, 'index.html'))
+})
+
+server.listen(PORT, () => {
+  console.log(`Server started on port ${PORT}`)
+})
