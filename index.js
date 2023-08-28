@@ -26,6 +26,8 @@ io.on('connection', (socket) => {
     const { room } = config
     const { rooms } = socket
 
+    console.log('JOIN_ROOM', room)
+
     if (Array.from(rooms).includes(room)) {
       return console.warn(`Already joined to ${room}`)
     }
