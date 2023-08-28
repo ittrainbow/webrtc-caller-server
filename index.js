@@ -7,7 +7,7 @@ const { version, validate } = require('uuid')
 
 const PORT = process.env.PORT || 5001
 
-function getClientRooms() {
+function getRooms() {
   const { rooms } = io.sockets.adapter
 
   return Array.from(rooms.keys()).filter((room) => validate(room) && version(room) === 4)
@@ -15,7 +15,7 @@ function getClientRooms() {
 
 function shareRoomsInfo() {
   io.emit('share_rooms', {
-    rooms: getClientRooms()
+    rooms: getRooms()
   })
 }
 
@@ -30,16 +30,16 @@ io.on('connection', (socket) => {
       return console.warn(`Already joined to ${room}`)
     }
 
-    const clients = Array.from(io.sockets.adapter.rooms.get(room) || [])
+    const users = Array.from(io.sockets.adapter.rooms.get(room) || [])
 
-    clients.forEach((client) => {
-      io.to(client).emit('add_peer', {
+    users.forEach((user) => {
+      io.to(user).emit('add_peer', {
         peer: socket.id,
         shouldCreateOffer: false
       })
 
       socket.emit('add_peer', {
-        peer: client,
+        peer: user,
         shouldCreateOffer: true
       })
     })
@@ -54,11 +54,11 @@ io.on('connection', (socket) => {
     Array.from(rooms)
       .filter((room) => validate(room) && version(room) === 4)
       .forEach((room) => {
-        const clients = Array.from(io.sockets.adapter.rooms.get(room) || [])
+        const users = Array.from(io.sockets.adapter.rooms.get(room) || [])
 
-        clients.forEach((client) => {
-          io.to(client).emit('remove_peer', { peer: socket.id })
-          socket.emit('remove_peer', { peer: client })
+        users.forEach((user) => {
+          io.to(user).emit('remove_peer', { peer: socket.id })
+          socket.emit('remove_peer', { peer: user })
         })
 
         socket.leave(room)
