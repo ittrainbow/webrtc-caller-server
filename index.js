@@ -14,7 +14,7 @@ function getClientRooms() {
 }
 
 function shareRoomsInfo() {
-  io.emit('SHARE_ROOMS', {
+  io.emit('share_rooms', {
     rooms: getClientRooms()
   })
 }
@@ -22,11 +22,9 @@ function shareRoomsInfo() {
 io.on('connection', (socket) => {
   shareRoomsInfo()
 
-  socket.on('JOIN_ROOM', (config) => {
+  socket.on('join_room', (config) => {
     const { room } = config
     const { rooms } = socket
-
-    console.log('JOIN_ROOM', room)
 
     if (Array.from(rooms).includes(room)) {
       return console.warn(`Already joined to ${room}`)
@@ -34,14 +32,14 @@ io.on('connection', (socket) => {
 
     const clients = Array.from(io.sockets.adapter.rooms.get(room) || [])
 
-    clients.forEach((clientID) => {
-      io.to(clientID).emit('ADD_PEER', {
+    clients.forEach((client) => {
+      io.to(client).emit('add_peer', {
         peer: socket.id,
         shouldCreateOffer: false
       })
 
-      socket.emit('ADD_PEER', {
-        peer: clientID,
+      socket.emit('add_peer', {
+        peer: client,
         shouldCreateOffer: true
       })
     })
@@ -58,9 +56,9 @@ io.on('connection', (socket) => {
       .forEach((room) => {
         const clients = Array.from(io.sockets.adapter.rooms.get(room) || [])
 
-        clients.forEach((clientID) => {
-          io.to(clientID).emit('REMOVE_PEER', { peer: socket.id })
-          socket.emit('REMOVE_PEER', { peer: clientID })
+        clients.forEach((client) => {
+          io.to(client).emit('remove_peer', { peer: socket.id })
+          socket.emit('remove_peer', { peer: client })
         })
 
         socket.leave(room)
@@ -70,31 +68,23 @@ io.on('connection', (socket) => {
   }
 
   const sendSessionDescription = ({ peer, sessionDescription }) => {
-    io.to(peer).emit('SESSION_DESCRIPTION', {
+    io.to(peer).emit('emit_sdp', {
       peer: socket.id,
       sessionDescription
     })
   }
 
   const sendIceCandidate = ({ peer, iceCandidate }) => {
-    io.to(peer).emit('ICE_CANDIDATE', {
+    io.to(peer).emit('emit_ice', {
       peer: socket.id,
       iceCandidate
     })
   }
 
-  socket.on('LEAVE_ROOM', leaveRoom)
+  socket.on('leave_room', leaveRoom)
   socket.on('disconnecting', leaveRoom)
-  socket.on('RELAY_SDP', sendSessionDescription)
-  socket.on('RELAY_ICE', sendIceCandidate)
-})
-
-const publicPath = path.join(__dirname, 'build')
-
-app.use(express.static(publicPath))
-
-app.get('*', (req, res) => {
-  res.sendFile(path.join(publicPath, 'index.html'))
+  socket.on('transmit_sdp', sendSessionDescription)
+  socket.on('transmit_ice', sendIceCandidate)
 })
 
 server.listen(PORT, () => {
