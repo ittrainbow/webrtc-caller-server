@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 5001
 function getClientRooms() {
   const { rooms } = io.sockets.adapter
 
-  return Array.from(rooms.keys()).filter((roomID) => validate(roomID) && version(roomID) === 4)
+  return Array.from(rooms.keys()).filter((room) => validate(room) && version(room) === 4)
 }
 
 function shareRoomsInfo() {
@@ -23,28 +23,28 @@ io.on('connection', (socket) => {
   shareRoomsInfo()
 
   socket.on('JOIN_ROOM', (config) => {
-    const { roomID } = config
+    const { room } = config
     const { rooms } = socket
 
-    if (Array.from(rooms).includes(roomID)) {
-      return console.warn(`Already joined to ${roomID}`)
+    if (Array.from(rooms).includes(room)) {
+      return console.warn(`Already joined to ${room}`)
     }
 
-    const clients = Array.from(io.sockets.adapter.rooms.get(roomID) || [])
+    const clients = Array.from(io.sockets.adapter.rooms.get(room) || [])
 
     clients.forEach((clientID) => {
       io.to(clientID).emit('ADD_PEER', {
-        peerID: socket.id,
+        peer: socket.id,
         shouldCreateOffer: false
       })
 
       socket.emit('ADD_PEER', {
-        peerID: clientID,
+        peer: clientID,
         shouldCreateOffer: true
       })
     })
 
-    socket.join(roomID)
+    socket.join(room)
     shareRoomsInfo()
   })
 
@@ -52,31 +52,31 @@ io.on('connection', (socket) => {
     const { rooms } = socket
 
     Array.from(rooms)
-      .filter((roomID) => validate(roomID) && version(roomID) === 4)
-      .forEach((roomID) => {
-        const clients = Array.from(io.sockets.adapter.rooms.get(roomID) || [])
+      .filter((room) => validate(room) && version(room) === 4)
+      .forEach((room) => {
+        const clients = Array.from(io.sockets.adapter.rooms.get(room) || [])
 
         clients.forEach((clientID) => {
-          io.to(clientID).emit('REMOVE_PEER', { peerID: socket.id })
-          socket.emit('REMOVE_PEER', { peerID: clientID })
+          io.to(clientID).emit('REMOVE_PEER', { peer: socket.id })
+          socket.emit('REMOVE_PEER', { peer: clientID })
         })
 
-        socket.leave(roomID)
+        socket.leave(room)
       })
 
     shareRoomsInfo()
   }
 
-  const sendSessionDescription = ({ peerID, sessionDescription }) => {
-    io.to(peerID).emit('SESSION_DESCRIPTION', {
-      peerID: socket.id,
+  const sendSessionDescription = ({ peer, sessionDescription }) => {
+    io.to(peer).emit('SESSION_DESCRIPTION', {
+      peer: socket.id,
       sessionDescription
     })
   }
 
-  const sendIceCandidate = ({ peerID, iceCandidate }) => {
-    io.to(peerID).emit('ICE_CANDIDATE', {
-      peerID: socket.id,
+  const sendIceCandidate = ({ peer, iceCandidate }) => {
+    io.to(peer).emit('ICE_CANDIDATE', {
+      peer: socket.id,
       iceCandidate
     })
   }
