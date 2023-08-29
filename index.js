@@ -3,24 +3,23 @@ const express = require('express')
 const app = express()
 const server = require('http').createServer(app)
 const io = require('socket.io')(server)
-const { version, validate } = require('uuid')
 
 const PORT = process.env.PORT || 5001
 
 function getRooms() {
   const { rooms } = io.sockets.adapter
 
-  return Array.from(rooms.keys()).filter((room) => validate(room) && version(room) === 4)
+  return Array.from(rooms.keys()).filter((room) => !isNaN(room))
 }
 
-function shareRoomsInfo() {
+function shareRooms() {
   io.emit('share_rooms', {
     rooms: getRooms()
   })
 }
 
 io.on('connection', (socket) => {
-  shareRoomsInfo()
+  shareRooms()
 
   socket.on('join_room', (config) => {
     const { room } = config
@@ -45,14 +44,14 @@ io.on('connection', (socket) => {
     })
 
     socket.join(room)
-    shareRoomsInfo()
+    shareRooms()
   })
 
   const leaveRoom = () => {
     const { rooms } = socket
 
     Array.from(rooms)
-      .filter((room) => validate(room) && version(room) === 4)
+      .filter((room) => !isNaN(room))
       .forEach((room) => {
         const users = Array.from(io.sockets.adapter.rooms.get(room) || [])
 
@@ -64,7 +63,7 @@ io.on('connection', (socket) => {
         socket.leave(room)
       })
 
-    shareRoomsInfo()
+    shareRooms()
   }
 
   const sendSessionDescription = ({ peer, sessionDescription }) => {
